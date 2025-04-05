@@ -1,27 +1,35 @@
+
+
+
 import requests
 from github import Github
 import os
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
-from flask_cors import CORS  # Install with `pip install flask-cors`
+from flask_cors import CORS
 
 load_dotenv()
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for cross-origin requests (e.g., frontend on different port)
+CORS(app)
 
 @app.route('/')
 def home():
-    return jsonify({"message": "TalkToCode Backend API is running. Use /ingest, /analyze_codebase, /analyze_structure, /search, or /get_repo_data with POST requests."}), 200
+    return jsonify({"message": "TalkToCode Backend API is running. Use /ingest, /analyze_codebase, /analyze_structure, /search, or /get_repo_data with POST or GET requests."}), 200
 
-@app.route('/ingest', methods=['POST'])
+@app.route('/ingest', methods=['GET', 'POST'])
 def ingest_repo():
-    data = request.json
-    repo_url = data.get('repo_url')
-    exclude_patterns = data.get('exclude', [])  # List of patterns to exclude
-    max_size_kb = data.get('max_size_kb', 50)  # Default 50kb
+    if request.method == 'POST':
+        data = request.json
+        repo_url = data.get('repo_url')
+        exclude_patterns = data.get('exclude', [])
+        max_size_kb = data.get('max_size_kb', 50)
+    else:  # GET request
+        repo_url = request.args.get('repo_url')
+        exclude_patterns = request.args.get('exclude', '').split(',')
+        max_size_kb = int(request.args.get('max_size_kb', 50))
     
     if not repo_url:
         return jsonify({"error": "Missing repo_url"}), 400
@@ -37,16 +45,25 @@ def ingest_repo():
     return jsonify({
         "status": "success",
         "files_analyzed": len(repo_data["files"]),
-        "estimated_tokens": len(formatted_data.split()),  # Rough token estimate
+        "estimated_tokens": len(formatted_data.split()),
         "summary": summary,
         "suggestions": suggestions,
-        "repo_data": repo_data  # Send raw data structure for frontend
+        "repo_data": repo_data
     })
 
-@app.route('/analyze_codebase', methods=['POST'])
+@app.route('/analyze_codebase', methods=['GET', 'POST'])
 def analyze_codebase():
-    data = request.json
-    repo_data = data.get('repo_data')
+    if request.method == 'POST':
+        data = request.json
+        repo_data = data.get('repo_data')
+    else:  # GET request (limited functionality)
+        repo_data = request.args.get('repo_data')  # Note: GET can't easily handle complex JSON
+        if repo_data:
+            try:
+                repo_data = eval(repo_data)  # Unsafe, for demo only
+            except:
+                return jsonify({"error": "Invalid repo_data format for GET"}), 400
+    
     if not repo_data:
         return jsonify({"error": "Missing repo_data"}), 400
     
@@ -54,21 +71,39 @@ def analyze_codebase():
     summary = get_code_summary(formatted_data)
     return jsonify({"analysis": summary})
 
-@app.route('/analyze_structure', methods=['POST'])
+@app.route('/analyze_structure', methods=['GET', 'POST'])
 def analyze_structure():
-    data = request.json
-    repo_data = data.get('repo_data')
+    if request.method == 'POST':
+        data = request.json
+        repo_data = data.get('repo_data')
+    else:  # GET request (limited functionality)
+        repo_data = request.args.get('repo_data')
+        if repo_data:
+            try:
+                repo_data = eval(repo_data)  # Unsafe, for demo only
+            except:
+                return jsonify({"error": "Invalid repo_data format for GET"}), 400
+    
     if not repo_data:
         return jsonify({"error": "Missing repo_data"}), 400
     
     structure = "\n".join(repo_data["structure"])
     return jsonify({"structure": structure})
 
-@app.route('/search', methods=['POST'])
+@app.route('/search', methods=['GET', 'POST'])
 def search_repo():
-    data = request.json
-    repo_data = data.get('repo_data')
-    keyword = data.get('keyword')
+    if request.method == 'POST':
+        data = request.json
+        repo_data = data.get('repo_data')
+        keyword = data.get('keyword')
+    else:  # GET request
+        repo_data = request.args.get('repo_data')
+        keyword = request.args.get('keyword')
+        if repo_data:
+            try:
+                repo_data = eval(repo_data)  # Unsafe, for demo only
+            except:
+                return jsonify({"error": "Invalid repo_data format for GET"}), 400
     
     if not repo_data or not keyword:
         return jsonify({"error": "Missing repo_data or keyword"}), 400
@@ -76,11 +111,17 @@ def search_repo():
     search_results = search_code(repo_data, keyword)
     return jsonify({"results": search_results})
 
-@app.route('/get_repo_data', methods=['POST'])
+@app.route('/get_repo_data', methods=['GET', 'POST'])
 def get_repo_data():
-    data = request.json
-    repo_url = data.get('repo_url')
-    exclude_patterns = data.get('exclude', [])
+    if request.method == 'POST':
+        data = request.json
+        repo_url = data.get('repo_url')
+        exclude_patterns = data.get('exclude', [])
+    else:  # GET request
+        repo_url = request.args.get('repo_url')
+        exclude_patterns = request.args.get('exclude', '').split(',')
+        if not repo_url:
+            return jsonify({"error": "Missing repo_url parameter"}), 400
     
     if not repo_url:
         return jsonify({"error": "Missing repo_url"}), 400
@@ -111,7 +152,7 @@ def fetch_repo_data(repo_url, max_files=50, exclude_patterns=None):
 
     def traverse_directory(directory, path=""):
         nonlocal file_count, total_size
-        if file_count >= max_files or total_size > 50 * 1024:  # 50kb limit
+        if file_count >= max_files or total_size > 50 * 1024:
             print(f"Hit max file limit ({max_files}) or size limit (50kb)")
             return
         for content in directory:
