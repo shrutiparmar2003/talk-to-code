@@ -14,7 +14,7 @@ CORS(app)  # Enable CORS for cross-origin requests (e.g., frontend on different 
 
 @app.route('/')
 def home():
-    return jsonify({"message": "TalkToCode Backend API is running. Use /ingest, /analyze_codebase, /analyze_structure, or /search with POST requests."}), 200
+    return jsonify({"message": "TalkToCode Backend API is running. Use /ingest, /analyze_codebase, /analyze_structure, /search, or /get_repo_data with POST requests."}), 200
 
 @app.route('/ingest', methods=['POST'])
 def ingest_repo():
@@ -75,6 +75,25 @@ def search_repo():
     
     search_results = search_code(repo_data, keyword)
     return jsonify({"results": search_results})
+
+@app.route('/get_repo_data', methods=['POST'])
+def get_repo_data():
+    data = request.json
+    repo_url = data.get('repo_url')
+    exclude_patterns = data.get('exclude', [])
+    
+    if not repo_url:
+        return jsonify({"error": "Missing repo_url"}), 400
+    
+    repo_data = fetch_repo_data(repo_url, max_files=50, exclude_patterns=exclude_patterns)
+    if repo_data is None:
+        return jsonify({"error": "Failed to fetch repo data"}), 500
+    
+    return jsonify({
+        "status": "success",
+        "repo_data": repo_data,
+        "files_analyzed": len(repo_data["files"])
+    }), 200
 
 def fetch_repo_data(repo_url, max_files=50, exclude_patterns=None):
     print(f"Processing URL: {repo_url}")
